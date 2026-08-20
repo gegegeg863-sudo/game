@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full bg-slate-950 text-slate-100 select-none">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>深海戰紀：巨鯊決戰</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts: Orbitron & Noto Sans TC -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans TC"', 'sans-serif'],
+            orbitron: ['"Orbitron"', 'sans-serif']
+          },
+          colors: {
+            cyber: {
+              blue: '#00f3ff',
+              navy: '#0b132b',
+              red: '#ff0055',
+              darkred: '#880022',
+              gold: '#ffcc00',
+              green: '#00ff88',
+              purple: '#b026ff'
+            }
+          },
+          boxShadow: {
+            'glow-blue': '0 0 15px rgba(0, 243, 255, 0.6), inset 0 0 15px rgba(0, 243, 255, 0.3)',
+            'glow-red': '0 0 15px rgba(255, 0, 85, 0.6), inset 0 0 15px rgba(255, 0, 85, 0.3)',
+            'glow-gold': '0 0 15px rgba(255, 204, 0, 0.6), inset 0 0 15px rgba(255, 204, 0, 0.3)',
+            'glow-green': '0 0 15px rgba(0, 255, 136, 0.6)'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    html, body {
+      height: 100%;
+      max-height: 100dvh;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+    
+    .hud-border-cyan {
+      border: 1.5px solid #00f3ff;
+      clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    }
+    
+    .hud-border-red {
+      border: 1.5px solid #ff0055;
+      clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    }
+
+    .hud-panel {
+      background: linear-gradient(135deg, rgba(11, 19, 43, 0.9) 0%, rgba(5, 9, 20, 0.95) 100%);
+      backdrop-filter: blur(8px);
+    }
+
+    /* Floating damage text animation */
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0) scale(0.8); }
+      30% { opacity: 1; transform: translateY(-25px) scale(1.2); }
+      100% { opacity: 0; transform: translateY(-55px) scale(1); }
+    }
+    .damage-popup {
+      position: absolute;
+      animation: floatUp 1.2s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+      pointer-events: none;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      text-shadow: 0 0 8px currentColor, 0 2px 4px rgba(0,0,0,0.9);
+      z-index: 50;
+    }
+
+    /* Screen Shake FX */
+    .shake {
+      animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+    }
+    @keyframes shake {
+      10%, 90% { transform: translate3d(-3px, 0, 0); }
+      20%, 80% { transform: translate3d(5px, 0, 0); }
+      30%, 50%, 70% { transform: translate3d(-8px, 0, 0); }
+      40%, 60% { transform: translate3d(8px, 0, 0); }
+    }
+
+    /* Custom Scrollbar for Battle Log */
+    #battle-log::-webkit-scrollbar {
+      width: 4px;
+    }
+    #battle-log::-webkit-scrollbar-thumb {
+      background: rgba(0, 243, 255, 0.4);
+      border-radius: 2px;
+    }
+    #battle-log::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.3);
+    }
+  </style>
+</head>
+<body class="h-full max-h-[100dvh] w-full bg-slate-950 text-white font-sans overflow-hidden flex flex-col justify-between p-2 sm:p-3">
+
+  <div id="game-container" class="relative w-full h-full max-w-6xl mx-auto flex flex-col justify-between overflow-hidden">
+    
+    <!-- Background Animated Canvas -->
+    <canvas id="bg-canvas" class="absolute inset-0 w-full h-full pointer-events-none z-0"></canvas>
+    <!-- Visual Effect Canvas -->
+    <canvas id="fx-canvas" class="absolute inset-0 w-full h-full pointer-events-none z-20"></canvas>
+
+    <!-- ==================== TOP HEADER / STATUS BARS ==================== -->
+    <header class="relative z-10 w-full flex flex-col gap-1.5 flex-shrink-0">
+      
+      <!-- Top Utility Bar (Audio, VS, Timer, Pause) -->
+      <div class="flex items-center justify-between px-3 py-1 bg-slate-900/90 backdrop-blur border border-cyan-500/30 rounded-lg">
+        <!-- Audio & BGM Toggle -->
+        <button id="btn-audio" onclick="toggleAudio()" class="px-2.5 py-1 text-cyan-400 hover:text-white transition flex items-center gap-1.5 text-xs font-bold bg-cyan-950/60 border border-cyan-500/50 rounded shadow-glow-blue">
+          <i id="audio-icon" class="fas fa-volume-up"></i>
+          <span>音效/BGM</span>
+        </button>
+
+        <!-- Round & Timer Counter -->
+        <div class="flex items-center gap-3 font-orbitron">
+          <div class="text-right">
+            <span class="text-[10px] text-cyan-300 block leading-none">ROUND</span>
+            <span id="round-counter" class="text-base font-black text-white leading-none">1</span>
+          </div>
+          <div class="text-xl font-black italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-red-500 drop-shadow-[0_0_8px_rgba(0,243,255,0.8)]">
+            VS
+          </div>
+          <div class="text-left">
+            <span class="text-[10px] text-red-400 block leading-none">TIME</span>
+            <span id="battle-timer" class="text-base font-black text-white leading-none">00:00</span>
+          </div>
+        </div>
+
+        <!-- Pause Button -->
+        <button onclick="pauseGame()" class="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/60 rounded text-amber-300 font-bold text-xs transition flex items-center gap-1 shadow-glow-gold">
+          <i class="fas fa-pause"></i>
+          <span>暫停</span>
+        </button>
+      </div>
+
+      <!-- Player & Boss Status Header Cards Grid -->
+      <div class="grid grid-cols-2 gap-2 w-full">
+        
+        <!-- Hero Status Card (Left) -->
+        <div class="hud-panel hud-border-cyan p-2 rounded-md flex items-center gap-2 relative overflow-hidden">
+          <!-- Avatar -->
+          <div class="relative flex-shrink-0">
+            <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-cyan-400 p-0.5 overflow-hidden bg-slate-900 shadow-glow-blue flex items-center justify-center">
+              <img src="hero.jpg" alt="何宥勳" class="w-full h-full object-cover rounded-full" onerror="this.onerror=null; this.src='https://placehold.co/100x100/0b132b/00f3ff?text=Hero';">
+            </div>
+          </div>
+
+          <!-- Player Details & HP/MP Bars -->
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between mb-0.5">
+              <span class="font-bold text-xs sm:text-sm text-cyan-200 truncate">何宥勳</span>
+              <i id="buff-shield" class="fas fa-shield-halved text-cyan-400 opacity-30 text-xs" title="護盾"></i>
+            </div>
+
+            <!-- Player HP Bar -->
+            <div class="relative w-full h-3.5 sm:h-4 bg-slate-900/90 rounded border border-emerald-500/50 overflow-hidden mb-1">
+              <div id="player-hp-bar" class="h-full bg-gradient-to-r from-emerald-600 to-green-400 transition-all duration-300 w-full shadow-glow-green"></div>
+              <span id="player-hp-text" class="absolute inset-0 flex items-center justify-center text-[9px] sm:text-[10px] font-orbitron font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                18500 / 18500
+              </span>
+            </div>
+
+            <!-- Player MP / Energy Bar -->
+            <div class="relative w-full h-3 sm:h-3.5 bg-slate-900/90 rounded border border-cyan-500/50 overflow-hidden">
+              <div id="player-mp-bar" class="h-full bg-gradient-to-r from-blue-600 via-cyan-400 to-indigo-400 transition-all duration-300 w-full shadow-glow-blue"></div>
+              <span id="player-mp-text" class="absolute inset-0 flex items-center justify-center text-[8px] sm:text-[9px] font-orbitron font-bold text-cyan-100 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                MP: 100 / 100
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Boss Status Card (Right) -->
+        <div class="hud-panel hud-border-red p-2 rounded-md flex items-center gap-2 relative overflow-hidden">
+          <!-- Boss Details & HP Bar -->
+          <div class="flex-1 min-w-0 text-right">
+            <div class="flex items-center justify-between mb-0.5">
+              <span class="text-[9px] font-orbitron font-black bg-red-950 border border-red-500 text-red-300 px-1 py-0.2 rounded shadow-glow-red">BOSS</span>
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-xs sm:text-sm text-red-200 truncate">深海巨鯊</span>
+                <span class="text-[9px] font-orbitron text-red-400 font-bold">LV.50</span>
+              </div>
+            </div>
+
+            <!-- Boss HP Bar -->
+            <div class="relative w-full h-4 sm:h-5 bg-slate-900/90 rounded border border-red-500/50 overflow-hidden">
+              <div id="boss-hp-bar" class="h-full bg-gradient-to-l from-red-600 via-rose-500 to-amber-500 transition-all duration-300 w-full shadow-glow-red"></div>
+              <span id="boss-hp-text" class="absolute inset-0 flex items-center justify-center text-[9px] sm:text-[10px] font-orbitron font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                25000 / 25000
+              </span>
+            </div>
+
+            <!-- Boss Skill Badges -->
+            <div class="flex justify-end gap-1 mt-0.5 text-[9px] text-red-300 font-bold">
+              <span class="px-1 py-0 bg-red-950/80 border border-red-800 rounded">狂暴</span>
+              <span class="px-1 py-0 bg-red-950/80 border border-red-800 rounded">撕裂</span>
+              <span class="px-1 py-0 bg-red-950/80 border border-red-800 rounded">深海突襲</span>
+            </div>
+          </div>
+
+          <!-- Boss Avatar -->
+          <div class="relative flex-shrink-0">
+            <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-red-500 p-0.5 overflow-hidden bg-slate-900 shadow-glow-red flex items-center justify-center">
+              <img src="shark.jpg" alt="深海巨鯊" class="w-full h-full object-cover rounded-full" onerror="this.onerror=null; this.src='https://placehold.co/100x100/181e29/ff0055?text=Shark';">
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- ==================== MAIN MIDDLE ARENA ==================== -->
+    <main id="battle-stage" class="relative flex-1 min-h-0 my-1.5 rounded-lg border border-slate-800 bg-slate-950/90 overflow-hidden grid grid-cols-1 md:grid-cols-12 gap-2 p-2">
+      
+      <!-- Battle Log Box (Left Column - Matches Screen Design) -->
+      <div class="md:col-span-7 flex flex-col h-full bg-black/80 backdrop-blur border border-cyan-500/40 rounded-lg p-2.5 overflow-hidden shadow-xl">
+        <div class="flex items-center justify-between border-b border-cyan-500/30 pb-1 mb-1.5 flex-shrink-0">
+          <span class="text-xs font-orbitron font-bold text-cyan-400 flex items-center gap-1.5">
+            <i class="fas fa-terminal text-[10px]"></i> &gt;_ 戰況日誌 (BATTLE LOG)
+          </span>
+          <span class="text-[10px] text-slate-400">即時紀錄</span>
+        </div>
+        
+        <!-- Log Content Area -->
+        <div id="battle-log" class="flex-1 overflow-y-auto space-y-1 font-sans text-xs pr-1 leading-relaxed">
+          <!-- Log entries injected dynamically -->
+        </div>
+      </div>
+
+      <!-- Boss Shark Dynamic Visual Display (Right Column - Matches Screen Visual) -->
+      <div class="md:col-span-5 relative rounded-lg border border-red-500/40 overflow-hidden flex items-center justify-center bg-gradient-to-b from-cyan-950/40 via-slate-900 to-red-950/50 shadow-inner">
+        <!-- Floating Shield Aura -->
+        <div id="shield-aura" class="hidden absolute inset-2 rounded-full border-2 border-cyan-400 bg-cyan-500/10 animate-pulse pointer-events-none z-10 shadow-glow-blue"></div>
+
+        <!-- Shark Graphic Visual Box -->
+        <div id="boss-sprite-container" class="relative z-10 w-full h-full flex flex-col items-center justify-center p-2 transition-transform duration-300">
+          <div class="relative w-full h-full max-h-56 flex items-center justify-center drop-shadow-[0_0_20px_rgba(255,0,85,0.6)]">
+            <img src="shark.jpg" alt="深海巨鯊" class="max-w-full max-h-full object-contain rounded-xl border-2 border-red-500/60 shadow-glow-red" onerror="this.onerror=null; this.src='https://placehold.co/400x300/0b132b/ff0055?text=Deep+Sea+Shark';">
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ==================== BOTTOM CONTROLS & MP BAR ==================== -->
+    <footer class="relative z-10 flex flex-col gap-1.5 flex-shrink-0">
+      
+      <!-- MP Gains Info Banner -->
+      <div class="px-3 py-1 bg-slate-900/90 border border-cyan-500/30 rounded text-[11px] text-cyan-300 flex items-center justify-between font-mono shadow">
+        <span><i class="fas fa-bolt text-cyan-400 mr-1"></i><strong>MP 獲得規則:</strong> 普攻 +12 MP | 被打 +8 MP | 每回合 +5 MP</span>
+      </div>
+
+      <!-- Action Control Buttons Grid (Guaranteed Full Visibility) -->
+      <div class="grid grid-cols-5 gap-1.5 sm:gap-2">
+        
+        <!-- Skill 1: 能量護盾 -->
+        <button id="btn-skill-shield" onclick="useSkill('shield')" class="hud-panel border border-cyan-500/60 hover:border-cyan-400 rounded-lg p-1.5 sm:p-2 flex flex-col items-center justify-center transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none group">
+          <div class="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-cyan-950 border border-cyan-400 flex items-center justify-center text-cyan-300 group-hover:shadow-glow-blue transition">
+            <i class="fas fa-shield-halved text-xs sm:text-base"></i>
+          </div>
+          <span class="text-[10px] sm:text-xs font-bold text-cyan-200 mt-1 truncate">能量護盾</span>
+          <span class="text-[8px] sm:text-[9px] font-orbitron text-cyan-400 font-semibold">MP 20</span>
+        </button>
+
+        <!-- Skill 2: 雷霆斬擊 -->
+        <button id="btn-skill-slash" onclick="useSkill('slash')" class="hud-panel border border-cyan-500/60 hover:border-cyan-400 rounded-lg p-1.5 sm:p-2 flex flex-col items-center justify-center transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none group">
+          <div class="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-cyan-950 border border-cyan-400 flex items-center justify-center text-cyan-300 group-hover:shadow-glow-blue transition">
+            <i class="fas fa-bolt text-xs sm:text-base"></i>
+          </div>
+          <span class="text-[10px] sm:text-xs font-bold text-cyan-200 mt-1 truncate">雷霆斬擊</span>
+          <span class="text-[8px] sm:text-[9px] font-orbitron text-cyan-400 font-semibold">MP 35</span>
+        </button>
+
+        <!-- Skill 3: HP回復 -->
+        <button id="btn-skill-heal" onclick="useSkill('heal')" class="hud-panel border border-emerald-500/60 hover:border-emerald-400 rounded-lg p-1.5 sm:p-2 flex flex-col items-center justify-center transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none group">
+          <div class="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-emerald-950 border border-emerald-400 flex items-center justify-center text-emerald-300 group-hover:shadow-glow-green transition relative">
+            <i class="fas fa-hand-holding-medical text-xs sm:text-base"></i>
+            <span id="heal-count-badge" class="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 text-[8px] sm:text-[9px] font-bold px-1 rounded-full">3</span>
+          </div>
+          <span class="text-[10px] sm:text-xs font-bold text-emerald-200 mt-1 truncate">HP回復</span>
+          <span class="text-[8px] sm:text-[9px] font-orbitron text-emerald-400 font-semibold">MP 15</span>
+        </button>
+
+        <!-- Skill 4: 終極技 -->
+        <button id="btn-skill-ult" onclick="useSkill('ult')" class="hud-panel border border-amber-500/60 hover:border-amber-400 rounded-lg p-1.5 sm:p-2 flex flex-col items-center justify-center transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none group">
+          <div class="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-amber-950 border border-amber-400 flex items-center justify-center text-amber-300 group-hover:shadow-glow-gold transition">
+            <i class="fas fa-dragon text-xs sm:text-base"></i>
+          </div>
+          <span class="text-[10px] sm:text-xs font-bold text-amber-200 mt-1 truncate">終極技</span>
+          <span class="text-[8px] sm:text-[9px] font-orbitron text-amber-400 font-semibold">MP 100</span>
+        </button>
+
+        <!-- Skill 5: 普通攻擊 (Big Highlighted Attack Button) -->
+        <button id="btn-attack" onclick="useSkill('normal')" class="col-span-1 border-2 border-red-500 bg-gradient-to-br from-red-600 via-rose-700 to-red-950 hover:from-red-500 hover:to-rose-800 rounded-lg p-1.5 sm:p-2 flex flex-col items-center justify-center shadow-glow-red transition active:scale-95 group">
+          <div class="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-red-950/80 border border-red-300 flex items-center justify-center text-white">
+            <i class="fas fa-swords text-sm sm:text-lg"></i>
+          </div>
+          <span class="text-xs sm:text-sm font-black text-white mt-0.5 tracking-wider">攻擊</span>
+          <span class="text-[8px] sm:text-[9px] font-orbitron text-cyan-300 font-bold">+12 MP</span>
+        </button>
+
+      </div>
+
+    </footer>
+  </div>
+
+  <!-- ==================== HOME / START SCREEN MODAL ==================== -->
+  <div id="modal-home" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="max-w-md w-full hud-panel hud-border-cyan rounded-xl p-6 text-center relative overflow-hidden shadow-2xl">
+      <div class="inline-block px-3 py-1 bg-cyan-950 border border-cyan-400 rounded-full text-[10px] font-orbitron text-cyan-300 font-bold mb-2">
+        TURBO TURN-BASED CYBER BATTLE
+      </div>
+      
+      <h1 class="text-2xl sm:text-3xl font-black italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-300 to-purple-400 drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] mb-2">
+        深海戰紀：巨鯊決戰
+      </h1>
+      <p class="text-xs text-slate-300 mb-4">對抗深海巨鯊 BOSS，善用 MP 與技能擊潰強敵！</p>
+
+      <!-- Rules & Guide -->
+      <div class="bg-slate-900/90 border border-cyan-500/30 rounded-lg p-3 text-left text-xs space-y-1.5 mb-5">
+        <h3 class="font-bold text-cyan-300 border-b border-cyan-500/30 pb-1 mb-1 text-xs flex items-center gap-1.5">
+          <i class="fas fa-book-open"></i> 戰鬥簡介與 MP 規則
+        </h3>
+        <p class="text-slate-300 text-[11px]">• 普通攻擊: 無消耗，獲得 <strong class="text-cyan-300">+12 MP</strong></p>
+        <p class="text-slate-300 text-[11px]">• 能量護盾: 消耗 <strong class="text-cyan-300">20 MP</strong>，2 回合內傷害減半</p>
+        <p class="text-slate-300 text-[11px]">• 雷霆斬擊: 消耗 <strong class="text-cyan-300">35 MP</strong>，暴擊重創 BOSS</p>
+        <p class="text-slate-300 text-[11px]">• HP回復: 消耗 <strong class="text-emerald-300">15 MP</strong> (每場限用 3 次)</p>
+        <p class="text-slate-300 text-[11px]">• 終極技: 消耗 <strong class="text-amber-300">100 MP</strong> 釋放毀滅攻擊</p>
+      </div>
+
+      <!-- Start Button -->
+      <button onclick="startGame()" class="w-full py-3 bg-gradient-to-r from-cyan-500 via-blue-600 to-cyan-500 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-base tracking-widest rounded-lg shadow-glow-blue transition">
+        <i class="fas fa-play mr-1.5"></i> 開始遊戲
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== PAUSE MODAL ==================== -->
+  <div id="modal-pause" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="max-w-xs w-full hud-panel border border-amber-500/50 rounded-xl p-5 text-center shadow-glow-gold">
+      <div class="text-amber-400 text-3xl mb-2"><i class="fas fa-pause-circle"></i></div>
+      <h2 class="text-lg font-bold text-amber-200 mb-4">遊戲暫停中</h2>
+
+      <div class="space-y-2">
+        <button onclick="resumeGame()" class="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded text-xs shadow transition">
+          <i class="fas fa-play mr-1"></i> 繼續遊戲
+        </button>
+        <button onclick="restartGame()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 font-bold rounded text-xs transition">
+          <i class="fas fa-rotate-right mr-1"></i> 重新開始
+        </button>
+        <button onclick="goToHome()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 font-bold rounded text-xs transition">
+          <i class="fas fa-house mr-1"></i> 回到首頁
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== VICTORY / GAME OVER MODAL ==================== -->
+  <div id="modal-result" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="max-w-sm w-full hud-panel rounded-xl p-6 text-center relative overflow-hidden shadow-2xl border-2" id="result-card">
+      <div id="result-icon-box" class="w-16 h-16 mx-auto rounded-full flex items-center justify-center text-3xl mb-3">
+        <i id="result-icon" class="fas fa-trophy"></i>
+      </div>
+
+      <h2 id="result-title" class="text-2xl font-black tracking-wider mb-1"></h2>
+      <p id="result-subtitle" class="text-xs text-slate-300 mb-4"></p>
+
+      <div class="bg-slate-900/80 rounded-lg p-2.5 text-xs text-slate-300 space-y-1 mb-5 text-left">
+        <div class="flex justify-between"><span>對戰回合數:</span><span id="stat-rounds" class="font-bold text-white">0</span></div>
+        <div class="flex justify-between"><span>戰鬥時間:</span><span id="stat-time" class="font-bold text-white">00:00</span></div>
+        <div class="flex justify-between"><span>剩餘 HP:</span><span id="stat-hp" class="font-bold text-emerald-400">0</span></div>
+      </div>
+
+      <div class="flex gap-2">
+        <button onclick="restartGame()" class="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-slate-950 font-black text-xs rounded-lg shadow-glow-green transition">
+          <i class="fas fa-rotate-right mr-1"></i> 再來一次
+        </button>
+        <button onclick="goToHome()" class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 font-bold text-xs rounded-lg transition">
+          <i class="fas fa-house"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ===================================================================
+       AUDIO & BGM SYNTHESIZER (Multi-track Cyberpunk Audio Engine)
+       =================================================================== */
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+        this.bgmTimer = null;
+        this.bgmStep = 0;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playTone(freq, type, duration, gainValue = 0.1) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(gainValue, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch(e){}
+      }
+
+      sfxAttack() {
+        if (this.muted || !this.ctx) return;
+        this.playTone(420, 'sawtooth', 0.1, 0.15);
+        setTimeout(() => this.playTone(850, 'triangle', 0.12, 0.2), 40);
+      }
+
+      sfxThunder() {
+        if (this.muted || !this.ctx) return;
+        this.playTone(130, 'sawtooth', 0.3, 0.25);
+        setTimeout(() => this.playTone(650, 'sawtooth', 0.2, 0.2), 60);
+      }
+
+      sfxShield() {
+        if (this.muted || !this.ctx) return;
+        this.playTone(280, 'sine', 0.25, 0.15);
+        setTimeout(() => this.playTone(520, 'sine', 0.35, 0.15), 80);
+      }
+
+      sfxHeal() {
+        if (this.muted || !this.ctx) return;
+        [440, 554, 659, 880].forEach((freq, idx) => {
+          setTimeout(() => this.playTone(freq, 'sine', 0.18, 0.12), idx * 70);
+        });
+      }
+
+      sfxHit() {
+        if (this.muted || !this.ctx) return;
+        this.playTone(90, 'square', 0.2, 0.2);
+      }
+
+      sfxVictory() {
+        if (this.muted || !this.ctx) return;
+        [523, 659, 783, 1046].forEach((freq, idx) => {
+          setTimeout(() => this.playTone(freq, 'triangle', 0.28, 0.2), idx * 110);
+        });
+      }
+
+      sfxDefeat() {
+        if (this.muted || !this.ctx) return;
+        [400, 340, 280, 200].forEach((freq, idx) => {
+          setTimeout(() => this.playTone(freq, 'sawtooth', 0.35, 0.2), idx * 130);
+        });
+      }
+
+      /* Cyberpunk Deep Sea BGM Loop */
+      startBGM() {
+        if (this.bgmTimer) clearInterval(this.bgmTimer);
+        const bassline = [110, 110, 130, 110, 146, 130, 98, 110];
+        const arpeggio = [220, 277, 330, 440, 330, 277, 220, 165];
+
+        this.bgmStep = 0;
+        this.bgmTimer = setInterval(() => {
+          if (!this.muted && this.ctx && game.state === 'PLAYING') {
+            const bassFreq = bassline[this.bgmStep % bassline.length];
+            const arpFreq = arpeggio[this.bgmStep % arpeggio.length];
+            
+            // Bass Track
+            this.playTone(bassFreq / 2, 'sawtooth', 0.2, 0.05);
+            
+            // Lead Arp
+            if (this.bgmStep % 2 === 0) {
+              this.playTone(arpFreq, 'sine', 0.12, 0.03);
+            }
+
+            // Rhythm click
+            if (this.bgmStep % 4 === 0) {
+              this.playTone(800, 'square', 0.03, 0.02);
+            }
+
+            this.bgmStep++;
+          }
+        }, 220);
+      }
+
+      stopBGM() {
+        if (this.bgmTimer) clearInterval(this.bgmTimer);
+      }
+    }
+
+    const audio = new AudioEngine();
+
+    function toggleAudio() {
+      audio.muted = !audio.muted;
+      const icon = document.getElementById('audio-icon');
+      icon.className = audio.muted ? 'fas fa-volume-mute text-red-400' : 'fas fa-volume-up text-cyan-400';
+    }
+
+
+    /* ===================================================================
+       GAME STATE & LOGIC
+       =================================================================== */
+    const MAX_PLAYER_HP = 18500;
+    const MAX_BOSS_HP = 25000;
+    const MAX_MP = 100;
+
+    const game = {
+      state: 'HOME', // HOME, PLAYING, PAUSED, OVER
+      round: 1,
+      timerSeconds: 0,
+      timerInterval: null,
+      isPlayerTurn: true,
+
+      player: {
+        hp: MAX_PLAYER_HP,
+        mp: 100,
+        shieldTurns: 0,
+        healUsesLeft: 3
+      },
+
+      boss: {
+        hp: MAX_BOSS_HP
+      }
+    };
+
+
+    function startGame() {
+      audio.init();
+      document.getElementById('modal-home').classList.add('hidden');
+      resetGameStats();
+      game.state = 'PLAYING';
+      startTimer();
+      audio.startBGM();
+      logMessage('戰鬥開始！何宥勳 率先發動攻擊。', 'text-cyan-400 font-bold');
+      updateUI();
+    }
+
+    function pauseGame() {
+      if (game.state !== 'PLAYING') return;
+      game.state = 'PAUSED';
+      clearInterval(game.timerInterval);
+      document.getElementById('modal-pause').classList.remove('hidden');
+    }
+
+    function resumeGame() {
+      if (game.state !== 'PAUSED') return;
+      document.getElementById('modal-pause').classList.add('hidden');
+      game.state = 'PLAYING';
+      startTimer();
+    }
+
+    function restartGame() {
+      document.getElementById('modal-pause').classList.add('hidden');
+      document.getElementById('modal-result').classList.add('hidden');
+      resetGameStats();
+      game.state = 'PLAYING';
+      startTimer();
+      logMessage('戰鬥重新開始！何宥勳 率先發動攻擊。', 'text-cyan-400 font-bold');
+      updateUI();
+    }
+
+    function goToHome() {
+      document.getElementById('modal-pause').classList.add('hidden');
+      document.getElementById('modal-result').classList.add('hidden');
+      document.getElementById('modal-home').classList.remove('hidden');
+      game.state = 'HOME';
+      clearInterval(game.timerInterval);
+    }
+
+    function resetGameStats() {
+      game.round = 1;
+      game.timerSeconds = 0;
+      game.isPlayerTurn = true;
+
+      game.player.hp = MAX_PLAYER_HP;
+      game.player.mp = 100;
+      game.player.shieldTurns = 0;
+      game.player.healUsesLeft = 3;
+
+      game.boss.hp = MAX_BOSS_HP;
+
+      document.getElementById('battle-log').innerHTML = '';
+      clearInterval(game.timerInterval);
+    }
+
+    function startTimer() {
+      clearInterval(game.timerInterval);
+      game.timerInterval = setInterval(() => {
+        if (game.state === 'PLAYING') {
+          game.timerSeconds++;
+          const mins = String(Math.floor(game.timerSeconds / 60)).padStart(2, '0');
+          const secs = String(game.timerSeconds % 60).padStart(2, '0');
+          document.getElementById('battle-timer').innerText = `${mins}:${secs}`;
+        }
+      }, 1000);
+    }
+
+
+    /* ===================================================================
+       COMBAT & SKILL HANDLING
+       =================================================================== */
+    function useSkill(skillType) {
+      if (game.state !== 'PLAYING' || !game.isPlayerTurn) return;
+
+      let mpCost = 0;
+      let damage = 0;
+      let healAmount = 0;
+      let skillName = '';
+
+      switch(skillType) {
+        case 'normal':
+          mpCost = 0;
+          damage = Math.floor(1500 + Math.random() * 400);
+          skillName = '普通攻擊';
+          audio.sfxAttack();
+          break;
+
+        case 'shield':
+          mpCost = 20;
+          if (game.player.mp < mpCost) return flashLowMP();
+          game.player.shieldTurns = 2;
+          skillName = '能量護盾';
+          audio.sfxShield();
+          break;
+
+        case 'slash':
+          mpCost = 35;
+          if (game.player.mp < mpCost) return flashLowMP();
+          damage = Math.floor(2800 + Math.random() * 600);
+          skillName = '雷霆斬擊';
+          audio.sfxThunder();
+          break;
+
+        case 'heal':
+          mpCost = 15;
+          if (game.player.healUsesLeft <= 0) {
+            logMessage('HP回復 技能次數已用盡！', 'text-amber-400');
+            return;
+          }
+          if (game.player.mp < mpCost) return flashLowMP();
+          
+          game.player.healUsesLeft--;
+          healAmount = Math.floor(2500 + Math.random() * 500);
+          game.player.hp = Math.min(MAX_PLAYER_HP, game.player.hp + healAmount);
+          skillName = 'HP回復';
+          audio.sfxHeal();
+          break;
+
+        case 'ult':
+          mpCost = 100;
+          if (game.player.mp < mpCost) return flashLowMP();
+          damage = Math.floor(5500 + Math.random() * 1000);
+          skillName = '終極技';
+          audio.sfxThunder();
+          break;
+      }
+
+      if (skillType === 'normal') {
+        game.player.mp = Math.min(MAX_MP, game.player.mp + 12);
+      } else {
+        game.player.mp -= mpCost;
+      }
+
+      game.isPlayerTurn = false;
+
+      if (damage > 0) {
+        game.boss.hp = Math.max(0, game.boss.hp - damage);
+        showFloatingText(damage, 'boss-sprite-container', '#ff0055');
+        triggerFX('slash');
+        logMessage(`何宥勳使出「${skillName}」，造成 ${damage} 傷害。`, 'text-cyan-300');
+      } else if (healAmount > 0) {
+        showFloatingText(`+${healAmount}`, 'boss-sprite-container', '#00ff88');
+        logMessage(`何宥勳啟動「HP回復」，恢復 ${healAmount} HP。剩餘次數：${game.player.healUsesLeft}`, 'text-emerald-400 font-bold');
+      } else if (skillType === 'shield') {
+        logMessage(`何宥勳展開「能量護盾」！獲得 50% 傷害減免 (2回合)。`, 'text-cyan-400');
+      }
+
+      updateUI();
+
+      if (game.boss.hp <= 0) {
+        setTimeout(() => triggerVictory(), 600);
+        return;
+      }
+
+      setTimeout(() => bossTurn(), 1100);
+    }
+
+    function bossTurn() {
+      if (game.state !== 'PLAYING') return;
+
+      const bossSkills = [
+        { name: '撕裂', minDmg: 1300, maxDmg: 1800 },
+        { name: '狂暴突襲', minDmg: 1800, maxDmg: 2400 },
+        { name: '深海突襲', minDmg: 2200, maxDmg: 2800 }
+      ];
+
+      const skill = bossSkills[Math.floor(Math.random() * bossSkills.length)];
+      let rawDamage = Math.floor(skill.minDmg + Math.random() * (skill.maxDmg - skill.minDmg));
+
+      if (game.player.shieldTurns > 0) {
+        rawDamage = Math.floor(rawDamage * 0.5);
+        game.player.shieldTurns--;
+        logMessage(`護盾抵擋了 50% 傷害！`, 'text-cyan-400 italic');
+      }
+
+      game.player.hp = Math.max(0, game.player.hp - rawDamage);
+      game.player.mp = Math.min(MAX_MP, game.player.mp + 8); // +8 MP when taking damage
+
+      triggerScreenShake();
+      audio.sfxHit();
+      showFloatingText(`-${rawDamage}`, 'boss-sprite-container', '#ff0055');
+
+      logMessage(`深海巨鯊發動「${skill.name}」！何宥勳受到 ${rawDamage} 傷害。`, 'text-rose-400');
+
+      if (game.player.hp <= 0) {
+        updateUI();
+        setTimeout(() => triggerDefeat(), 600);
+        return;
+      }
+
+      game.round++;
+      game.player.mp = Math.min(MAX_MP, game.player.mp + 5); // +5 MP per round
+      game.isPlayerTurn = true;
+
+      updateUI();
+    }
+
+    function flashLowMP() {
+      logMessage('MP 能量不足，無法發動技能！', 'text-amber-400 font-bold');
+    }
+
+
+    /* ===================================================================
+       UI UPDATE & RENDER HELPERS
+       =================================================================== */
+    function updateUI() {
+      const pHealthPct = Math.max(0, (game.player.hp / MAX_PLAYER_HP) * 100);
+      document.getElementById('player-hp-bar').style.width = `${pHealthPct}%`;
+      document.getElementById('player-hp-text').innerText = `${game.player.hp} / ${MAX_PLAYER_HP}`;
+
+      const bHealthPct = Math.max(0, (game.boss.hp / MAX_BOSS_HP) * 100);
+      document.getElementById('boss-hp-bar').style.width = `${bHealthPct}%`;
+      document.getElementById('boss-hp-text').innerText = `${game.boss.hp} / ${MAX_BOSS_HP}`;
+
+      const pMpPct = (game.player.mp / MAX_MP) * 100;
+      document.getElementById('player-mp-bar').style.width = `${pMpPct}%`;
+      document.getElementById('player-mp-text').innerText = `MP: ${game.player.mp} / ${MAX_MP}`;
+
+      document.getElementById('round-counter').innerText = game.round;
+      document.getElementById('heal-count-badge').innerText = game.player.healUsesLeft;
+
+      const shieldAura = document.getElementById('shield-aura');
+      const shieldBuffIcon = document.getElementById('buff-shield');
+      if (game.player.shieldTurns > 0) {
+        shieldAura.classList.remove('hidden');
+        shieldBuffIcon.classList.remove('opacity-30');
+      } else {
+        shieldAura.classList.add('hidden');
+        shieldBuffIcon.classList.add('opacity-30');
+      }
+
+      const isMyTurn = game.isPlayerTurn && game.state === 'PLAYING';
+      document.getElementById('btn-attack').disabled = !isMyTurn;
+      document.getElementById('btn-skill-shield').disabled = !isMyTurn || game.player.mp < 20;
+      document.getElementById('btn-skill-slash').disabled = !isMyTurn || game.player.mp < 35;
+      document.getElementById('btn-skill-heal').disabled = !isMyTurn || game.player.mp < 15 || game.player.healUsesLeft <= 0;
+      document.getElementById('btn-skill-ult').disabled = !isMyTurn || game.player.mp < 100;
+    }
+
+    function logMessage(msg, colorClass = 'text-white') {
+      const logBox = document.getElementById('battle-log');
+      const entry = document.createElement('div');
+      entry.className = `leading-relaxed ${colorClass}`;
+      entry.innerHTML = `<span class="text-slate-500 text-[10px] mr-1">[R${game.round}]</span>${msg}`;
+      logBox.appendChild(entry);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function triggerScreenShake() {
+      const stage = document.getElementById('battle-stage');
+      stage.classList.add('shake');
+      setTimeout(() => stage.classList.remove('shake'), 400);
+    }
+
+    function showFloatingText(text, targetId, color) {
+      const target = document.getElementById(targetId);
+      const rect = target.getBoundingClientRect();
+      const popup = document.createElement('div');
+      popup.className = 'damage-popup text-lg sm:text-xl';
+      popup.innerText = text;
+      popup.style.color = color;
+      popup.style.left = `${rect.left + rect.width / 2 - 20}px`;
+      popup.style.top = `${rect.top + 20}px`;
+      document.body.appendChild(popup);
+      setTimeout(() => popup.remove(), 1200);
+    }
+
+
+    /* ===================================================================
+       VICTORY / DEFEAT END GAME HANDLING
+       =================================================================== */
+    function triggerVictory() {
+      game.state = 'OVER';
+      audio.sfxVictory();
+      
+      const modal = document.getElementById('modal-result');
+      const card = document.getElementById('result-card');
+      const iconBox = document.getElementById('result-icon-box');
+      
+      card.className = "max-w-sm w-full hud-panel rounded-xl p-6 text-center relative overflow-hidden shadow-2xl border-2 border-emerald-500 shadow-glow-green";
+      iconBox.className = "w-16 h-16 mx-auto rounded-full bg-emerald-950 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 text-3xl mb-3 shadow-glow-green";
+      
+      document.getElementById('result-title').innerText = "戰鬥勝利！";
+      document.getElementById('result-title').className = "text-2xl font-black tracking-wider mb-1 text-emerald-400";
+      document.getElementById('result-subtitle').innerText = "成功擊敗深海巨鯊，保衛了海底基地的和平！";
+      
+      document.getElementById('stat-rounds').innerText = game.round;
+      document.getElementById('stat-time').innerText = document.getElementById('battle-timer').innerText;
+      document.getElementById('stat-hp').innerText = `${game.player.hp} / ${MAX_PLAYER_HP}`;
+      
+      modal.classList.remove('hidden');
+    }
+
+    function triggerDefeat() {
+      game.state = 'OVER';
+      audio.sfxDefeat();
+
+      const modal = document.getElementById('modal-result');
+      const card = document.getElementById('result-card');
+      const iconBox = document.getElementById('result-icon-box');
+
+      card.className = "max-w-sm w-full hud-panel rounded-xl p-6 text-center relative overflow-hidden shadow-2xl border-2 border-red-500 shadow-glow-red";
+      iconBox.className = "w-16 h-16 mx-auto rounded-full bg-red-950 border-2 border-red-500 flex items-center justify-center text-red-500 text-3xl mb-3 shadow-glow-red";
+
+      document.getElementById('result-title').innerText = "戰鬥失敗...";
+      document.getElementById('result-title').className = "text-2xl font-black tracking-wider mb-1 text-red-500";
+      document.getElementById('result-subtitle').innerText = "深海巨鯊力量過於強大，請重新整備再戰！";
+
+      document.getElementById('stat-rounds').innerText = game.round;
+      document.getElementById('stat-time').innerText = document.getElementById('battle-timer').innerText;
+      document.getElementById('stat-hp').innerText = `0 / ${MAX_PLAYER_HP}`;
+
+      modal.classList.remove('hidden');
+    }
+
+
+    /* ===================================================================
+       CANVAS BACKGROUND & SLASH EFFECTS
+       =================================================================== */
+    const bgCanvas = document.getElementById('bg-canvas');
+    const fxCanvas = document.getElementById('fx-canvas');
+    const bgCtx = bgCanvas.getContext('2d');
+    const fxCtx = fxCanvas.getContext('2d');
+
+    let particles = [];
+
+    function resizeCanvas() {
+      bgCanvas.width = window.innerWidth;
+      bgCanvas.height = window.innerHeight;
+      fxCanvas.width = window.innerWidth;
+      fxCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    for (let i = 0; i < 35; i++) {
+      particles.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        r: Math.random() * 2.5 + 1,
+        speedY: Math.random() * 0.7 + 0.2,
+        alpha: Math.random() * 0.5 + 0.2
+      });
+    }
+
+    function renderBG() {
+      bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+      
+      bgCtx.strokeStyle = 'rgba(0, 243, 255, 0.04)';
+      bgCtx.lineWidth = 1;
+      const gridSize = 35;
+      for (let x = 0; x < bgCanvas.width; x += gridSize) {
+        bgCtx.beginPath();
+        bgCtx.moveTo(x, 0);
+        bgCtx.lineTo(x, bgCanvas.height);
+        bgCtx.stroke();
+      }
+      for (let y = 0; y < bgCanvas.height; y += gridSize) {
+        bgCtx.beginPath();
+        bgCtx.moveTo(0, y);
+        bgCtx.lineTo(bgCanvas.width, y);
+        bgCtx.stroke();
+      }
+
+      particles.forEach(p => {
+        bgCtx.fillStyle = `rgba(0, 243, 255, ${p.alpha})`;
+        bgCtx.beginPath();
+        bgCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        bgCtx.fill();
+
+        p.y -= p.speedY;
+        if (p.y < 0) p.y = bgCanvas.height;
+      });
+
+      requestAnimationFrame(renderBG);
+    }
+    renderBG();
+
+    function triggerFX(type) {
+      let frame = 0;
+      function animateFX() {
+        fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+        if (type === 'slash' && frame < 8) {
+          fxCtx.strokeStyle = '#00f3ff';
+          fxCtx.lineWidth = 6;
+          fxCtx.shadowBlur = 12;
+          fxCtx.shadowColor = '#00f3ff';
+          fxCtx.beginPath();
+          fxCtx.moveTo(fxCanvas.width * 0.55, fxCanvas.height * 0.35);
+          fxCtx.lineTo(fxCanvas.width * 0.75, fxCanvas.height * 0.65);
+          fxCtx.stroke();
+          frame++;
+          requestAnimationFrame(animateFX);
+        } else {
+          fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+        }
+      }
+      animateFX();
+    }
+
+    window.onload = function() {
+      updateUI();
+    };
+  </script>
+</body>
+</html>
